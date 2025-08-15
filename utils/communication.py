@@ -28,6 +28,11 @@ def read_result(resultfile):
     beta, funcVal = result['beta'], result['funcVal']
     return beta, funcVal
 
+def read_result_gfl_multi(resultfile):
+    result = sio.loadmat(resultfile)
+    M, s, u, funcVal = result['M'], result['s'], result['u'], result['funcVal']
+    return M, s, u, funcVal
+
 # convert adjacency matrix to edges and costs for signal family
 def A_to_edges(A):
     if not sp.issparse(A):

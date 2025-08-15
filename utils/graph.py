@@ -39,6 +39,9 @@ def generate_graph(d, k, p, q):
     
     return L, A
 
+def generate_multi_way_graph(selected_clusters, non_selected_clusters, k, p, q):
+    pass
+
 
 # get the normalized laplacian matrix from the laplacian matrix
 def normalized_laplacian(L):
