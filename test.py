@@ -118,20 +118,46 @@ def gfl_multi(X, y, L, i, k=None, l=None, rho=None, mu=0.01, datafile=None, resu
     M, s, u, _ = read_result_gfl_multi(resultfile_name)
     return M, s, u
 
+def call_matlab_same(datafile, resultfile, rho, mu, k=None, l=None):
+    eng = matlab.engine.start_matlab()
+    try:
+        eng.cd(os.path.abspath('./src/PQN/'))
+        eng.addpath(os.path.abspath('./src/PQN/'))
+        eng.addpath(eng.genpath(os.path.abspath('./src/PQN/')))
+        eng.addpath(eng.genpath(os.path.abspath('./src/PQN/minConF/')))
+        eng.gfl_multi_new_inv_same(datafile, resultfile, rho, mu, float(k), float(l), nargout=0)
+    finally:
+        eng.quit()
+
+def gfl_multi_same_weights(X, y, L, i, k=None, l=None, rho=None, mu=0.01, datafile=None, resultfile=None):
+    datafile_name = os.path.join(datafile, f'data_{i}.mat')
+    resultfile_name = os.path.join(resultfile, f'result_{i}.mat')
+    save_data(X=X, y=y, L=L, filename=datafile_name)
+    call_matlab_same(datafile_name, resultfile_name, rho, mu, float(k), float(l))
+    M, s, u, _ = read_result_gfl_multi(resultfile_name)
+    return M, s, u
+
 if __name__ == "__main__":
+    # get the argments from command line which methods we want to test
+    import sys
+    method = sys.argv[1] if len(sys.argv) > 1 else "gfl_multi"
+    print(f"Testing method: {method}")
     np.random.seed(42)
     p, q = 0.95, 0.01
-    n = 100
-    num_selected_clusters, num_non_selected_clusters = 2, 2
-    num_selected_features, num_non_selected_features = 10, 20
+    n = 150
+    rho, mu = 15.0, 0.1
+    num_selected_clusters, num_non_selected_clusters = 2, 5
+    num_selected_features, num_non_selected_features = 10, 50
     d = num_selected_features + num_non_selected_features
+    k = num_selected_features
+    l = num_selected_clusters + num_non_selected_clusters
     selected_clusters, non_selected_clusters = generate_cluster_sizes(num_selected_clusters, num_non_selected_clusters, num_selected_features, num_non_selected_features)
     print("Selected clusters sizes:", selected_clusters)
     print("Non-selected clusters sizes:", non_selected_clusters)
     A, L = generate_multi_way_graph(selected_clusters, non_selected_clusters, p, q)
     w = generate_w(selected_clusters, non_selected_clusters)
     print("True w:", w)
-    X = generate_X(n, len(w))
+    X = generate_X(n, d)
     y = generate_y(X, w, gamma=0.5)
     datafile = os.path.abspath("./data/data_multi/")
     resultfile = os.path.abspath("./data/result_multi/")
@@ -139,7 +165,10 @@ if __name__ == "__main__":
         os.makedirs(datafile)
     if not os.path.exists(resultfile):
         os.makedirs(resultfile)
-    M, s, u = gfl_multi(X, y, L, i=0, k=10, l=4, rho=1.0, mu=1.0, datafile=datafile, resultfile=resultfile)
+    if method == "gfl_multi_same":
+        M, s, u = gfl_multi_same_weights(X, y, L, i=0, k=k, l=l, rho=rho, mu=mu, datafile=datafile, resultfile=resultfile)
+    else:
+        M, s, u = gfl_multi(X, y, L, i=0, k=k, l=l, rho=rho, mu=mu, datafile=datafile, resultfile=resultfile)
     print("M shape:", M.shape)
     print("s shape:", s.shape)
     print("u shape:", u.shape)
