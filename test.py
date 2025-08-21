@@ -144,7 +144,7 @@ if __name__ == "__main__":
     print(f"Testing method: {method}")
     np.random.seed(42)
     p, q = 0.95, 0.01
-    n = 150
+    n = 300
     rho, mu = 15.0, 0.1
     num_selected_clusters, num_non_selected_clusters = 2, 5
     num_selected_features, num_non_selected_features = 10, 50

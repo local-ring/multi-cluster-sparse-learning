@@ -160,13 +160,11 @@ function z_proj = Project_UMS_Gurobi(z0, d, k, l)
 % Euclidean projection of z=[vec(M); s; u] onto:
 %   0<=M<=1,  sum_j M(i,j)=1  (i=1..d)
 %   0<=s<=1
-%   0<=u<=1,  sum_i u_i <= k           (convex surrogate of ||u||_0<=k)
+%   0<=u<=1,  sum_i u_i <= k
 %   u_i >= m_ij + s_j - 1   for all i,j
 %
 % INPUT:  z0 length d*l + l + d (pack of M, s, u)
 % OUTPUT: z_proj of same length
-%
-% NOTE: Projection model is unchanged from the previous version.
 
     nM = d*l; ns = l; nu = d;
     n_core = nM + ns + nu;
@@ -179,9 +177,9 @@ function z_proj = Project_UMS_Gurobi(z0, d, k, l)
     model.modelname  = 'Project_UMS_Gurobi';
     model.modelsense = 'min';
 
-    % Objective: 0.5 * ||[M;s;u] - z0||^2  == 0.5 x'Qx + obj' x
+    % Quadratic projection objective: 0.5*||x - z0||^2
     model.Q   = speye(n_core);
-    model.obj = -2 * z0;
+    model.obj = -2 * z0;        % constant term omitted
 
     % Bounds: 0 <= variables <= 1
     model.lb = zeros(n_core,1);
@@ -195,42 +193,63 @@ function z_proj = Project_UMS_Gurobi(z0, d, k, l)
     idxs = nM + (1:ns);
     idxu = nM + ns + (1:nu);
 
-    % ----- constraints -----
-    rows = {}; rhs = []; sense = [];
+    % ----- constraints assembly -----
+    rows = {}; 
+    rhs  = [];
+    sense = '';   % IMPORTANT: start as empty CHAR row, not numeric
 
-    % (a) Row-stochastic M: sum_j M(i,j) = 1
+    % (a) Row-stochastic M: sum_j M(i,j) = 1   (d constraints, '=')
     for i = 1:d
         row = sparse(1, n_core);
-        idx = (0:(l-1))*d + i;           % positions of M(i,1..l) in vec(M)
+        idx = (0:(l-1))*d + i;            % positions of M(i,1..l) in vec(M)
         row(1, idxM(idx)) = 1;
-        rows{end+1,1} = row; rhs(end+1,1) = 1; sense(end+1,1) = '=';
+        rows{end+1,1} = row; 
+        rhs(end+1,1)  = 1;
+        sense = [sense '='];
     end
 
-    % (b) Sum cap on u: sum_i u_i <= k
+    % (b) Sum cap on u: sum_i u_i <= k   (1 constraint, '<')
     row = sparse(1, n_core);
     row(1, idxu) = 1;
-    rows{end+1,1} = row; rhs(end+1,1) = k; sense(end+1,1) = '<';
+    rows{end+1,1} = row; 
+    rhs(end+1,1)  = k; 
+    sense = [sense '<'];
 
-    % (c) Coupling: u_i >= m_ij + s_j - 1    for all i,j
+    % (c) Coupling: u_i >= m_ij + s_j - 1  for all i,j
+    %     equivalently: -u_i + m_ij + s_j <= 1   (d*l constraints, '<')
     for j = 1:l
-        mcol = (j-1)*d + (1:d);          % column j of M in vec(M)
+        mcol = (j-1)*d + (1:d);           % column j of M in vec(M)
         for i = 1:d
             row = sparse(1, n_core);
-            row(1, idxu(i))       = -1;
-            row(1, idxM(mcol(i))) = 1;
-            row(1, idxs(j))       = 1;
-            % -u_i + m_ij + s_j <= 1
-            rows{end+1,1} = row; rhs(end+1,1) = 1; sense(end+1,1) = '<';
+            row(1, idxu(i))        = -1;
+            row(1, idxM(mcol(i)))  = 1;
+            row(1, idxs(j))        = 1;
+            rows{end+1,1} = row; 
+            rhs(end+1,1)  = 1; 
+            sense = [sense '<'];
         end
     end
 
     % Stack
-    model.A     = vertcat(rows{:});
-    model.rhs   = rhs;
-    model.sense = '<';  % keep mixed senses
+    Astack = vertcat(rows{:});
+    if ~issparse(Astack), Astack = sparse(Astack); end
+    model.A   = Astack;
+    model.rhs = rhs(:);
+
+    % Finalize senses as 1×m char row
+    model.sense = reshape(sense, 1, []);
+
+    % ---- sanity checks ----
+    m_expected = d + 1 + d*l;
+    m = size(model.A, 1);
+    assert(m == m_expected, 'A has %d rows; expected %d (= d + 1 + d*l).', m, m_expected);
+    assert(numel(model.rhs) == m, 'rhs length %d != #rows(A) %d', numel(model.rhs), m);
+    assert(ischar(model.sense) && isrow(model.sense) && numel(model.sense) == m, ...
+        'model.sense must be 1x%d char; got class=%s size=%s', ...
+        m, class(model.sense), mat2str(size(model.sense)));
 
     % Solve
-    params.OutputFlag = 0;
+    params.OutputFlag    = 0;
     params.IterationLimit = 500;
     result = gurobi(model, params);
 
